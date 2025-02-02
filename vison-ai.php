@@ -13,6 +13,7 @@
 
 // Exit if accessed directly
 namespace vison\visonai;
+use WP_Error;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -41,7 +42,7 @@ class VISON_Admin
             'manage_options', // Capability required
             'vison-ai-settings', // Menu slug
             [$this, 'settings_page_html'], // Callback function to display settings page
-            'dashicons-admin-settings', // Icon for the menu
+            'dashicons-rest-api', // Icon for the menu
             100 // Position
         );
     }
@@ -57,7 +58,7 @@ class VISON_Admin
 
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Vison AI Settings', 'vison-ai'); ?></h1>
+            <h1><?php esc_html_e('Vison AI Settings', 'visonai'); ?></h1>
 
             <form action="options.php" method="POST">
                 <?php
@@ -76,15 +77,17 @@ class VISON_Admin
      */
     public function register_settings()
     {
+
         register_setting('vison_ai_settings', 'vison_ai_token', 'sanitize_text_field');
         register_setting('vison_ai_settings', 'vison_ai_domain', 'sanitize_custom_domain');
         register_setting('vison_ai_settings', 'vison_ai_script', 'sanitize_custom_script');
         register_setting('vison_ai_settings', 'vison_ai_script_option', [
             'type' => 'array',
-            'sanitize_callback' => 'vison_ai_sanitize_script_option',
+            //'sanitize_callback' => 'vison_ai_sanitize_script_option', // Sanitization for array
+            'sanitize_callback' => [$this, 'vison_ai_sanitize_script_option'], // Sanitization for array
+            //'sanitize_callback' => [self::class, 'vison_ai_sanitize_script_option'], // Static method callback
             'default' => [],
         ]);
-
         // Add settings section
         add_settings_section(
             'vison_ai_main_section',
@@ -178,8 +181,29 @@ class VISON_Admin
      */
     public function vison_ai_sanitize_script_option($input)
     {
-        return array_map('sanitize_text_field', (array) $input);
+        
+        // Ensure we only allow a safe array of values
+        // if (is_array($input)) {
+        //     return array_map(function ($value) {
+        //         return sanitize_text_field($value); // Sanitize each value in the array
+        //     }, $input);
+        // }
+        if (is_array($input)) {
+            // Sanitize each element in the array
+            return array_map('sanitize_text_field', $input);
+        }
+    
+        return []; // Return an empty array if not an array
     }
+    // public static function vison_ai_sanitize_script_option($input)
+    // {
+    //     if (is_array($input)) {
+    //         return array_map(function ($value) {
+    //             return sanitize_text_field($value); // Sanitize each value in the array
+    //         }, $input);
+    //     }
+    //     return []; // Return an empty array if the input is not an array
+    // }
 
     /**
      * Register the custom REST API routes.
@@ -190,60 +214,81 @@ class VISON_Admin
         register_rest_route('vison-ai/v1', '/post', [
             'methods' => 'POST',
             'callback' => [$this, 'vison_ai_create_post'],
-            'permission_callback' => [$this, 'vison_ai_permission_check'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'], // Correct method name
         ]);
 
         // Retrieve a post
         register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
             'methods' => 'GET',
             'callback' => [$this, 'vison_ai_get_post'],
-            'permission_callback' => [$this, 'vison_ai_permission_check'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'], // Correct method name
         ]);
 
         // Update a post
         register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
             'methods' => 'PUT',
             'callback' => [$this, 'vison_ai_update_post'],
-            'permission_callback' => [$this, 'vison_ai_permission_check'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'], // Correct method name
         ]);
 
         // Delete a post
         register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
             'methods' => 'DELETE',
             'callback' => [$this, 'vison_ai_delete_post'],
-            'permission_callback' => [$this, 'vison_ai_permission_check'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'], // Correct method name
         ]);
-         // Get user list
-         register_rest_route('vison-ai/v1', '/users', [
+
+        // Get user list
+        register_rest_route('vison-ai/v1', '/users', [
             'methods' => 'GET',
             'callback' => [$this, 'visonai_users_list'],
-            'permission_callback' => [$this, 'visonai_permission_check'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'], // Correct method name
         ]);
     }
+
 
     /**
      * Permission Callback: Validate Token and Domain
      */
     public function vison_ai_permission_check($request)
     {
-        
+        // Retrieve headers from the request
         $headers = $request->get_headers();
         $token = isset($headers['authorization'][0]) ? $headers['authorization'][0] : '';
         $referrer = isset($headers['referer'][0]) ? $headers['referer'][0] : '';
 
+        // Get the stored token and allowed domain from the settings
         $stored_token = get_option('vison_ai_token', '');
         $allowed_domain = get_option('vison_ai_domain', '');
 
-        if ($stored_token && $token !== $stored_token) {
+        // Debug output to check the retrieved values (for development only, remove in production)
+        // error_log("Stored Token: " . $stored_token); // This will log to your error_log file
+        // error_log("Allowed Domain: " . $allowed_domain); // This will log to your error_log file
+
+        // Check if token is blank
+        if (empty($stored_token)) {
+            return new WP_Error('missing_token', 'API token is missing in the settings.', ['status' => 400]);
+        }
+
+        // Check if provided token matches the stored token
+        if ($token !== $stored_token) {
             return new WP_Error('unauthorized', 'Invalid API token.', ['status' => 401]);
         }
 
-        if ($allowed_domain && stripos($referrer, $allowed_domain) === false) {
+        // Check if domain is blank
+        if (empty($allowed_domain)) {
+            return new WP_Error('missing_domain', 'Allowed domain is missing in the settings.', ['status' => 400]);
+        }
+
+        // Check if referrer is allowed (matches stored domain)
+        if (stripos($referrer, $allowed_domain) === false) {
             return new WP_Error('forbidden', 'Requests from this domain are not allowed.', ['status' => 403]);
         }
 
+        // If all checks pass, allow the request
         return true;
     }
+
 
     /**
      * Create a new post
@@ -355,40 +400,54 @@ class VISON_Admin
             echo wp_kses($visonai_script);
         }
     }
-    public function visonai_users_list($request) {
+    public function visonai_users_list($request)
+    {
         $params = $request->get_params();
-    
+
         $args = [
             'number' => isset($params['per_page']) ? (int) $params['per_page'] : -1,
-            'paged'  => isset($params['page']) ? (int) $params['page'] : 1,
+            'paged' => isset($params['page']) ? (int) $params['page'] : 1,
         ];
-    
+
         // Correct the usage of WP_User_Query by prefixing with global namespace
         $user_query = new \WP_User_Query($args);  // Notice the backslash before WP_User_Query
         $users = $user_query->get_results();
-    
+
         if (empty($users)) {
             return new WP_Error('no_users', 'No users found.', ['status' => 404]);
         }
-    
+
         $response = array_map(function ($user) {
             return [
-                'id'       => $user->ID,
+                'id' => $user->ID,
                 'username' => $user->user_login,
-                'email'    => $user->user_email,
-                'name'     => $user->display_name,
-                'role'     => implode(', ', $user->roles),
+                'email' => $user->user_email,
+                'name' => $user->display_name,
+                'role' => implode(', ', $user->roles),
             ];
         }, $users);
-    
+
         return rest_ensure_response([
             'users' => $response,
             'total' => $user_query->get_total(),
             'pages' => ceil($user_query->get_total() / $args['number']),
         ]);
     }
-    
-}
 
+}
+if (!function_exists('vison_ai_sanitize_script_option')) {
+    function vison_ai_sanitize_script_option($input)
+    {
+        die("llll");
+        // Ensure it's an array, and then sanitize each item
+        if (is_array($input)) {
+            return array_map('sanitize_text_field', $input);
+        }
+
+        // Return empty array if input is not an array
+        return [];
+    }
+
+}
 // Initialize the class
 new VISON_Admin();
