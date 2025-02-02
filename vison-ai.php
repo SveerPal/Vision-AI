@@ -12,62 +12,227 @@
  */
 
 // Exit if accessed directly
+namespace vison\visonai;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Register REST API routes
- */
-add_action('rest_api_init', function () {
-    // Create a new post
-    register_rest_route('vision-ai/v1', '/post', [
-        'methods' => 'POST',
-        'callback' => 'vision_ai_create_post',
-        'permission_callback' => 'vision_ai_permission_check',
-    ]);
-
-    // Retrieve a post
-    register_rest_route('vision-ai/v1', '/post/(?P<id>\d+)', [
-        'methods' => 'GET',
-        'callback' => 'vision_ai_get_post',
-        'permission_callback' => 'vision_ai_permission_check',
-    ]);
-
-    // Update a post
-    register_rest_route('vision-ai/v1', '/post/(?P<id>\d+)', [
-        'methods' => 'PUT',
-        'callback' => 'vision_ai_update_post',
-        'permission_callback' => 'vision_ai_permission_check',
-    ]);
-
-    // Delete a post
-    register_rest_route('vision-ai/v1', '/post/(?P<id>\d+)', [
-        'methods' => 'DELETE',
-        'callback' => 'vision_ai_delete_post',
-        'permission_callback' => 'vision_ai_permission_check',
-    ]);
-
-    // Get user list
-    register_rest_route('vision-ai/v1', '/users', [
-        'methods' => 'GET',
-        'callback' => 'usersList',
-        'permission_callback' => 'vision_ai_permission_check',
-    ]);
-});
-
-/**
- * Permission Callback: Validate Token and Domain
- */
-if (!function_exists('vision_ai_permission_check')) {
-    function vision_ai_permission_check($request)
+class VISON_Admin
+{
+    public function __construct()
     {
+        // Initialize hooks
+        add_action('rest_api_init', [$this, 'register_routes']);
+        add_action('wp_head', [$this, 'visonai_add_script_to_head']);
+        add_action('admin_menu', [$this, 'add_admin_menu']);
+        add_action('admin_init', [$this, 'register_settings']);
+    }
+
+    /**
+     * Add settings page to the admin menu
+     */
+    public function add_admin_menu()
+    {
+        // Add main menu page for the plugin
+        add_menu_page(
+            'Vison AI Settings', // Page title
+            'Vison AI', // Menu title
+            'manage_options', // Capability required
+            'vison-ai-settings', // Menu slug
+            [$this, 'settings_page_html'], // Callback function to display settings page
+            'dashicons-admin-settings', // Icon for the menu
+            100 // Position
+        );
+    }
+
+    /**
+     * Settings page content
+     */
+    public function settings_page_html()
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Vison AI Settings', 'vison-ai'); ?></h1>
+
+            <form action="options.php" method="POST">
+                <?php
+                // Output settings fields
+                settings_fields('vison_ai_settings');
+                do_settings_sections('vison-ai-settings');
+                submit_button();
+                ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    /**
+     * Register settings
+     */
+    public function register_settings()
+    {
+        register_setting('vison_ai_settings', 'vison_ai_token', 'sanitize_text_field');
+        register_setting('vison_ai_settings', 'vison_ai_domain', 'sanitize_custom_domain');
+        register_setting('vison_ai_settings', 'vison_ai_script', 'sanitize_custom_script');
+        register_setting('vison_ai_settings', 'vison_ai_script_option', [
+            'type' => 'array',
+            'sanitize_callback' => 'vison_ai_sanitize_script_option',
+            'default' => [],
+        ]);
+
+        // Add settings section
+        add_settings_section(
+            'vison_ai_main_section',
+            'Main Settings',
+            function () {
+                echo '<p>Configure the settings below:</p>';
+            },
+            'vison-ai-settings'
+        );
+
+        // Add API Token field
+        add_settings_field(
+            'vison_ai_token',
+            'API Token',
+            function () {
+                $token = get_option('vison_ai_token', '');
+                echo '<input type="text" name="vison_ai_token" value="' . esc_attr($token) . '" class="regular-text">';
+            },
+            'vison-ai-settings',
+            'vison_ai_main_section'
+        );
+
+        // Add Allowed Domain field
+        add_settings_field(
+            'vison_ai_domain',
+            'Allowed Domain',
+            function () {
+                $domain = get_option('vison_ai_domain', '');
+                echo '<input type="text" name="vison_ai_domain" value="' . esc_attr($domain) . '" class="regular-text" placeholder="e.g., https://example.com">';
+            },
+            'vison-ai-settings',
+            'vison_ai_main_section'
+        );
+
+        // Add Script Option field
+        add_settings_field(
+            'vison_ai_script_option',
+            'Select Option',
+            function () {
+                $vison_ai_script_option = get_option('vison_ai_script_option', []);
+                $options = [
+                    'All' => 'All',
+                    'categories' => 'Categories',
+                    'post' => 'Post',
+                    'page' => 'Page',
+                ];
+
+                foreach ($options as $value => $label) {
+                    $checked = in_array($value, (array) $vison_ai_script_option) ? 'checked' : '';
+                    echo '<label>';
+                    echo '<input type="checkbox" name="vison_ai_script_option[]" value="' . esc_attr($value) . '" ' . esc_attr($checked) . '>';
+                    echo esc_html($label);
+                    echo '</label><br>';
+                }
+            },
+            'vison-ai-settings',
+            'vison_ai_main_section'
+        );
+
+        // Add Script field
+        add_settings_field(
+            'vison_ai_script',
+            'Add Script',
+            function () {
+                $vison_ai_script = get_option('vison_ai_script', '');
+                echo '<textarea name="vison_ai_script" class="regular-text">' . esc_attr($vison_ai_script) . '</textarea>';
+            },
+            'vison-ai-settings',
+            'vison_ai_main_section'
+        );
+    }
+
+    /**
+     * Sanitize custom domain
+     */
+    public function sanitize_custom_domain($input)
+    {
+        return esc_url_raw($input);
+    }
+
+    /**
+     * Sanitize custom script
+     */
+    public function sanitize_custom_script($input)
+    {
+        return wp_kses_post($input); // Allow only safe HTML tags
+    }
+
+    /**
+     * Sanitize script options
+     */
+    public function vison_ai_sanitize_script_option($input)
+    {
+        return array_map('sanitize_text_field', (array) $input);
+    }
+
+    /**
+     * Register the custom REST API routes.
+     */
+    public function register_routes()
+    {
+        // Create a new post
+        register_rest_route('vison-ai/v1', '/post', [
+            'methods' => 'POST',
+            'callback' => [$this, 'vison_ai_create_post'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'],
+        ]);
+
+        // Retrieve a post
+        register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
+            'methods' => 'GET',
+            'callback' => [$this, 'vison_ai_get_post'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'],
+        ]);
+
+        // Update a post
+        register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
+            'methods' => 'PUT',
+            'callback' => [$this, 'vison_ai_update_post'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'],
+        ]);
+
+        // Delete a post
+        register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
+            'methods' => 'DELETE',
+            'callback' => [$this, 'vison_ai_delete_post'],
+            'permission_callback' => [$this, 'vison_ai_permission_check'],
+        ]);
+         // Get user list
+         register_rest_route('vison-ai/v1', '/users', [
+            'methods' => 'GET',
+            'callback' => [$this, 'visonai_users_list'],
+            'permission_callback' => [$this, 'visonai_permission_check'],
+        ]);
+    }
+
+    /**
+     * Permission Callback: Validate Token and Domain
+     */
+    public function vison_ai_permission_check($request)
+    {
+        
         $headers = $request->get_headers();
         $token = isset($headers['authorization'][0]) ? $headers['authorization'][0] : '';
         $referrer = isset($headers['referer'][0]) ? $headers['referer'][0] : '';
 
-        $stored_token = get_option('vision_ai_token', '');
-        $allowed_domain = get_option('vision_ai_domain', '');
+        $stored_token = get_option('vison_ai_token', '');
+        $allowed_domain = get_option('vison_ai_domain', '');
 
         if ($stored_token && $token !== $stored_token) {
             return new WP_Error('unauthorized', 'Invalid API token.', ['status' => 401]);
@@ -79,13 +244,11 @@ if (!function_exists('vision_ai_permission_check')) {
 
         return true;
     }
-}
 
-/**
- * Create a new post
- */
-if (!function_exists('vision_ai_create_post')) {
-    function vision_ai_create_post($request)
+    /**
+     * Create a new post
+     */
+    public function vison_ai_create_post($request)
     {
         $params = $request->get_json_params();
 
@@ -118,12 +281,11 @@ if (!function_exists('vision_ai_create_post')) {
             'author' => $author_id,
         ]);
     }
-}
-/**
- * Retrieve a post
- */
-if (!function_exists('vision_ai_get_post')) {
-    function vision_ai_get_post($request)
+
+    /**
+     * Retrieve a post
+     */
+    public function vison_ai_get_post($request)
     {
         $post_id = (int) $request['id'];
         $post = get_post($post_id);
@@ -138,13 +300,11 @@ if (!function_exists('vision_ai_get_post')) {
             'content' => $post->post_content,
         ]);
     }
-}
 
-/**
- * Update a post
- */
-if (!function_exists('vision_ai_update_post')) {
-    function vision_ai_update_post($request)
+    /**
+     * Update a post
+     */
+    public function vison_ai_update_post($request)
     {
         $post_id = (int) $request['id'];
         $params = $request->get_json_params();
@@ -161,12 +321,11 @@ if (!function_exists('vision_ai_update_post')) {
 
         return rest_ensure_response(['id' => $post_id, 'message' => 'Post updated successfully']);
     }
-}
-/**
- * Delete a post
- */
-if (!function_exists('vision_ai_delete_post')) {
-    function vision_ai_delete_post($request)
+
+    /**
+     * Delete a post
+     */
+    public function vison_ai_delete_post($request)
     {
         $post_id = (int) $request['id'];
         $deleted = wp_delete_post($post_id, true);
@@ -177,191 +336,59 @@ if (!function_exists('vision_ai_delete_post')) {
 
         return rest_ensure_response(['id' => $post_id, 'message' => 'Post deleted successfully']);
     }
-}
-/**
- * Get all users
- */
-if (!function_exists('usersList')) {
-    function usersList($request)
-    {
-        $params = $request->get_params();
 
+    /**
+     * Add custom script to the head
+     */
+    public function visonai_add_script_to_head()
+    {
+        $visonai_script_option = get_option('vison_ai_script_option', []);
+        $visonai_script = get_option('vison_ai_script');
+
+        if (in_array('All', (array) $visonai_script_option)) {
+            echo wp_kses($visonai_script);
+        } elseif (in_array('post', (array) $visonai_script_option) && is_single()) {
+            echo wp_kses($visonai_script);
+        } elseif (in_array('categories', (array) $visonai_script_option) && is_category()) {
+            echo wp_kses($visonai_script);
+        } elseif (in_array('page', (array) $visonai_script_option) && is_page()) {
+            echo wp_kses($visonai_script);
+        }
+    }
+    public function visonai_users_list($request) {
+        $params = $request->get_params();
+    
         $args = [
             'number' => isset($params['per_page']) ? (int) $params['per_page'] : -1,
-            'paged' => isset($params['page']) ? (int) $params['page'] : 1,
+            'paged'  => isset($params['page']) ? (int) $params['page'] : 1,
         ];
-
-        $user_query = new WP_User_Query($args);
+    
+        // Correct the usage of WP_User_Query by prefixing with global namespace
+        $user_query = new \WP_User_Query($args);  // Notice the backslash before WP_User_Query
         $users = $user_query->get_results();
-
+    
         if (empty($users)) {
             return new WP_Error('no_users', 'No users found.', ['status' => 404]);
         }
-
+    
         $response = array_map(function ($user) {
             return [
-                'id' => $user->ID,
+                'id'       => $user->ID,
                 'username' => $user->user_login,
-                'email' => $user->user_email,
-                'name' => $user->display_name,
-                'role' => implode(', ', $user->roles),
+                'email'    => $user->user_email,
+                'name'     => $user->display_name,
+                'role'     => implode(', ', $user->roles),
             ];
         }, $users);
-
+    
         return rest_ensure_response([
             'users' => $response,
             'total' => $user_query->get_total(),
             'pages' => ceil($user_query->get_total() / $args['number']),
         ]);
     }
-}
-/**
- * Admin menu for settings
- */
-add_action('admin_menu', function () {
-    add_menu_page(
-        'Vison AI Settings',
-        'Vison AI Settings',
-        'manage_options',
-        'vision-ai-settings',
-        'vision_ai_settings_page',
-        'dashicons-rest-api',
-        100
-    );
-});
-
-/**
- * Settings page content
- */
-if (!function_exists('vision_ai_settings_page')) {
-    function vision_ai_settings_page()
-    {
-        ?>
-        <div class="wrap">
-            <h1>Vision AI Settings</h1>
-            <form method="post" action="options.php">
-                <?php
-                settings_fields('vision_ai_settings');
-                do_settings_sections('vision-ai-settings');
-                submit_button();
-                ?>
-            </form>
-        </div>
-        <?php
-    }
-}
-if (!function_exists('vision_ai_sanitize_script_option')) {
-    function vision_ai_sanitize_script_option($input)
-    {
-        if (!is_array($input)) {
-            return [];
-        }
-        return array_map('sanitize_text_field', $input);
-    }
-}
-/**
- * Register settings
- */
-add_action('admin_init', function () {
     
-    register_setting('vision_ai_settings', 'vision_ai_token', 'sanitize_text_field');
-    register_setting('vision_ai_settings', 'vision_ai_domain', 'sanitize_custom_domain');
-    register_setting('vision_ai_settings', 'vision_ai_script', 'sanitize_custom_script');
-    // register_setting('vision_ai_settings', 'vision_ai_script_option', [
-    //     'type' => 'array',
-    //     'sanitize_callback' => function ($input) {
-    //         return array_map('sanitize_text_field', (array) $input);
-    //     },
-    //     'default' => [],
-    // ]);
-    register_setting('vision_ai_settings', 'vision_ai_script_option', [
-        'type' => 'array',  // Setting type
-        'sanitize_callback' => 'vision_ai_sanitize_script_option',  // Use the named function for sanitization
-        'default' => [],
-    ]);
+}
 
-    add_settings_section(
-        'vision_ai_main_section',
-        'Main Settings',
-        function () {
-            echo '<p>Configure the settings below:</p>';
-        },
-        'vision-ai-settings'
-    );
-
-    add_settings_field(
-        'vision_ai_token',
-        'API Token',
-        function () {
-            $token = get_option('vision_ai_token', '');
-            echo '<input type="text" name="vision_ai_token" value="' . esc_attr($token) . '" class="regular-text">';
-        },
-        'vision-ai-settings',
-        'vision_ai_main_section'
-    );
-
-    add_settings_field(
-        'vision_ai_domain',
-        'Allowed Domain',
-        function () {
-            $domain = get_option('vision_ai_domain', '');
-            echo '<input type="text" name="vision_ai_domain" value="' . esc_attr($domain) . '" class="regular-text" placeholder="e.g., https://example.com">';
-        },
-        'vision-ai-settings',
-        'vision_ai_main_section'
-    );
-
-    add_settings_field(
-        'vision_ai_script_option',
-        'Select Option',
-        function () {
-            $vision_ai_script_option = get_option('vision_ai_script_option', []); // Fetch saved options or default to an empty array.
-            $options = [
-                'All' => 'All',
-                'categories' => 'Categories',
-                'post' => 'Post',
-                'page' => 'Page',
-            ];
-
-            foreach ($options as $value => $label) {
-                $checked = in_array($value, (array) $vision_ai_script_option) ? 'checked' : ''; // Check if the value is saved.
-                echo '<label>';
-                echo '<input type="checkbox" name="vision_ai_script_option[]" value="' . esc_attr($value) . '" ' . esc_attr($checked) . '>';
-                echo esc_html($label);
-                echo '</label><br>';
-            }
-        },
-        'vision-ai-settings',
-        'vision_ai_main_section'
-    );
-
-
-    add_settings_field(
-        'vision_ai_script',
-        'Add Script',
-        function () {
-            $vision_ai_script = get_option('vision_ai_script', '');
-            echo '<textarea name="vision_ai_script" class="regular-text">' . esc_attr($vision_ai_script) . '</textarea>';
-        },
-        'vision-ai-settings',
-        'vision_ai_main_section'
-    );
-
-});
-
-add_action('wp_head', function () {
-    // Retrieve the saved options for script placement
-    $vision_ai_script_option = get_option('vision_ai_script_option', []);
-    $vision_ai_script = get_option('vision_ai_script');
-
-    // Check if "All" is selected, or any specific option is selected with the corresponding page type
-    if (in_array('All', (array) $vision_ai_script_option)) {
-        echo wp_kses($vision_ai_script);
-    } elseif (in_array('post', (array) $vision_ai_script_option) && is_single()) {
-        echo wp_kses($vision_ai_script);
-    } elseif (in_array('categories', (array) $vision_ai_script_option) && is_category()) {
-        echo wp_kses($vision_ai_script);
-    } elseif (in_array('page', (array) $vision_ai_script_option) && is_page()) {
-        echo wp_kses($vision_ai_script);
-    }
-});
+// Initialize the class
+new VISON_Admin();
