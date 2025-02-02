@@ -18,7 +18,6 @@ use WP_Error;
 if (!defined('ABSPATH')) {
     exit;
 }
-
 class VISON_Admin
 {
     public function __construct()
@@ -81,13 +80,14 @@ class VISON_Admin
         register_setting('vison_ai_settings', 'vison_ai_token', 'sanitize_text_field');
         register_setting('vison_ai_settings', 'vison_ai_domain', 'sanitize_custom_domain');
         register_setting('vison_ai_settings', 'vison_ai_script', 'sanitize_custom_script');
-        register_setting('vison_ai_settings', 'vison_ai_script_option', [
-            'type' => 'array',
-            //'sanitize_callback' => 'vison_ai_sanitize_script_option', // Sanitization for array
-            'sanitize_callback' => [$this, 'vison_ai_sanitize_script_option'], // Sanitization for array
-            //'sanitize_callback' => [self::class, 'vison_ai_sanitize_script_option'], // Static method callback
-            'default' => [],
-        ]);
+
+        register_setting('vison_ai_settings', 'vison_ai_script_option', 'vison_ai_sanitize_checkbox_field');
+        // register_setting('vison_ai_settings', 'vison_ai_script_option', [
+        //     'type' => 'array',
+        //   //  'sanitize_callback' => [self::class, 'sanitize_checkbox_field'],
+        //   'sanitize_callback' => 'vison_ai_sanitize_checkbox_field',  // Global function callback
+        //     'default' => [],
+        // ]);
         // Add settings section
         add_settings_section(
             'vison_ai_main_section',
@@ -179,31 +179,31 @@ class VISON_Admin
     /**
      * Sanitize script options
      */
-    public function vison_ai_sanitize_script_option($input)
+
+    public static function sanitize_checkbox_field($input)
     {
-        
-        // Ensure we only allow a safe array of values
-        // if (is_array($input)) {
-        //     return array_map(function ($value) {
-        //         return sanitize_text_field($value); // Sanitize each value in the array
-        //     }, $input);
-        // }
-        if (is_array($input)) {
-            // Sanitize each element in the array
-            return array_map('sanitize_text_field', $input);
+        // Make sure $input is an array
+        if (!is_array($input)) {
+            return [];
         }
-    
-        return []; // Return an empty array if not an array
+
+        // Define valid checkbox options
+        $valid_options = [
+            'all',
+            'categories',
+            'post',
+            'page', // These should match the values in your checkbox options
+        ];
+
+        // Sanitize each selected checkbox value
+        $input = array_map(function ($item) use ($valid_options) {
+            return in_array($item, $valid_options) ? sanitize_text_field($item) : '';
+        }, $input);
+
+        // Return the sanitized array
+        return array_filter($input); // Filter out any empty values
     }
-    // public static function vison_ai_sanitize_script_option($input)
-    // {
-    //     if (is_array($input)) {
-    //         return array_map(function ($value) {
-    //             return sanitize_text_field($value); // Sanitize each value in the array
-    //         }, $input);
-    //     }
-    //     return []; // Return an empty array if the input is not an array
-    // }
+
 
     /**
      * Register the custom REST API routes.
@@ -435,19 +435,6 @@ class VISON_Admin
     }
 
 }
-if (!function_exists('vison_ai_sanitize_script_option')) {
-    function vison_ai_sanitize_script_option($input)
-    {
-        die("llll");
-        // Ensure it's an array, and then sanitize each item
-        if (is_array($input)) {
-            return array_map('sanitize_text_field', $input);
-        }
 
-        // Return empty array if input is not an array
-        return [];
-    }
-
-}
 // Initialize the class
 new VISON_Admin();
