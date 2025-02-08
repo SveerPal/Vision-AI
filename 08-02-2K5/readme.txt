@@ -1,5 +1,5 @@
 === Vison AI ===
-Contributors: vison
+Contributors: milan@vison.ai
 Tags: API, CRUD, WordPress REST API
 Tested up to: 6.7
 Stable tag: 1.4
