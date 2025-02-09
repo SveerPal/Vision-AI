@@ -3,12 +3,13 @@
  * Plugin Name: Vison AI
  * Plugin URI: https://wordpress.org/plugins/vison-ai/
  * Description: A plugin to create Vison AI endpoints for WordPress posts with admin settings for Token and Domain.
- * Version: 1.4
+ * Version: 1.5
  * Requires at least: 5.0
  * Requires PHP: 7.4
  * License: GPLv2 or later
  * Author: Yashvir Pal
  * Author URI: https://yashvirpal.com
+ * Text Domain: visonai
  */
 
 // Exit if accessed directly
@@ -24,7 +25,8 @@ class VISON_Admin
     {
         // Initialize hooks
         add_action('rest_api_init', [$this, 'register_routes']);
-        add_action('wp_head', [$this, 'visonai_add_script_to_head']);
+        add_action('wp_enqueue_scripts', [$this, 'visonai_add_script_to_head']);
+        add_action('script_loader_tag', [$this, 'visonai_add_async_attribute'], 10, 2);
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
     }
@@ -37,7 +39,7 @@ class VISON_Admin
         // Add main menu page for the plugin
         add_menu_page(
             'Vison AI Settings', // Page title
-            'Vison AI', // Menu title
+            'Vison AI Settings', // Menu title
             'manage_options', // Capability required
             'vison-ai-settings', // Menu slug
             [$this, 'settings_page_html'], // Callback function to display settings page
@@ -79,15 +81,10 @@ class VISON_Admin
 
         register_setting('vison_ai_settings', 'vison_ai_token', 'sanitize_text_field');
         register_setting('vison_ai_settings', 'vison_ai_domain', 'sanitize_custom_domain');
-        register_setting('vison_ai_settings', 'vison_ai_script', 'sanitize_custom_script');
+        register_setting('vison_ai_settings', 'vison_ai_analysis_url', 'sanitize_custom_domain');
 
         register_setting('vison_ai_settings', 'vison_ai_script_option', 'vison_ai_sanitize_checkbox_field');
-        // register_setting('vison_ai_settings', 'vison_ai_script_option', [
-        //     'type' => 'array',
-        //   //  'sanitize_callback' => [self::class, 'sanitize_checkbox_field'],
-        //   'sanitize_callback' => 'vison_ai_sanitize_checkbox_field',  // Global function callback
-        //     'default' => [],
-        // ]);
+
         // Add settings section
         add_settings_section(
             'vison_ai_main_section',
@@ -149,11 +146,12 @@ class VISON_Admin
 
         // Add Script field
         add_settings_field(
-            'vison_ai_script',
-            'Add Script',
+            'vison_ai_analysis_url',
+            'Analysis Url',
             function () {
-                $vison_ai_script = get_option('vison_ai_script', '');
-                echo '<textarea name="vison_ai_script" class="regular-text">' . esc_attr($vison_ai_script) . '</textarea>';
+                $vison_ai_analysis_url = get_option('vison_ai_analysis_url', '');
+                echo '<input type="text" name="vison_ai_analysis_url" value="' . esc_attr($vison_ai_analysis_url) . '" class="regular-text" placeholder="e.g., https://example.com?v=1234">';
+
             },
             'vison-ai-settings',
             'vison_ai_main_section'
@@ -388,18 +386,36 @@ class VISON_Admin
     public function visonai_add_script_to_head()
     {
         $visonai_script_option = get_option('vison_ai_script_option', []);
-        $visonai_script = get_option('vison_ai_script');
+        $vison_ai_analysis_url = get_option('vison_ai_analysis_url');
 
         if (in_array('All', (array) $visonai_script_option)) {
-            echo wp_kses($visonai_script);
+            if (!empty($vison_ai_analysis_url)) {
+                wp_enqueue_script('vison-ai-analysis', esc_url($vison_ai_analysis_url), array(), 1.0, false);
+            }
         } elseif (in_array('post', (array) $visonai_script_option) && is_single()) {
-            echo wp_kses($visonai_script);
+            if (!empty($vison_ai_analysis_url)) {
+                wp_enqueue_script('vison-ai-analysis', esc_url($vison_ai_analysis_url), array(), 1.0, false);
+            }
+
         } elseif (in_array('categories', (array) $visonai_script_option) && is_category()) {
-            echo wp_kses($visonai_script);
+            if (!empty($vison_ai_analysis_url)) {
+                wp_enqueue_script('vison-ai-analysis', esc_url($vison_ai_analysis_url), array(), 1.0, false);
+            }
+
         } elseif (in_array('page', (array) $visonai_script_option) && is_page()) {
-            echo wp_kses($visonai_script);
+            if (!empty($vison_ai_analysis_url)) {
+                wp_enqueue_script('vison-ai-analysis', esc_url($vison_ai_analysis_url), array(), 1.0, false);
+            }
         }
     }
+    public function visonai_add_async_attribute($tag, $handle)
+    {
+        if ('vison-ai-analysis' === $handle) {
+            return str_replace('<script ', '<script async ', $tag);
+        }
+        return $tag;
+    }
+
     public function visonai_users_list($request)
     {
         $params = $request->get_params();
