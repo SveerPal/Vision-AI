@@ -112,11 +112,17 @@ class VISON_Admin
             'vison_ai_domain',
             'Allowed Domain',
             function () {
-                $domain = get_option('vison_ai_domain', '');
+                $domain = get_option('vison_ai_domain', '');                
+                //echo '<input type="text" name="vison_ai_domain" value="' . esc_attr($domain) . '" class="regular-text" placeholder="e.g., https://example.com">';
+                $domain ="https://codenskills.com/";
                 echo '<input type="text" name="vison_ai_domain" value="' . esc_attr($domain) . '" class="regular-text" placeholder="e.g., https://example.com">';
+                
             },
             'vison-ai-settings',
-            'vison_ai_main_section'
+            'vison_ai_main_section',
+            [
+                'class' => 'hidden-field' // Custom class
+            ]
         );
 
         // Add Script Option field
@@ -273,15 +279,15 @@ class VISON_Admin
             return new WP_Error('unauthorized', 'Invalid API token.', ['status' => 401]);
         }
 
-        // Check if domain is blank
-        if (empty($allowed_domain)) {
-            return new WP_Error('missing_domain', 'Allowed domain is missing in the settings.', ['status' => 400]);
-        }
+        // // Check if domain is blank
+        // if (empty($allowed_domain)) {
+        //     return new WP_Error('missing_domain', 'Allowed domain is missing in the settings.', ['status' => 400]);
+        // }
 
-        // Check if referrer is allowed (matches stored domain)
-        if (stripos($referrer, $allowed_domain) === false) {
-            return new WP_Error('forbidden', 'Requests from this domain are not allowed.', ['status' => 403]);
-        }
+        // // Check if referrer is allowed (matches stored domain)
+        // if (stripos($referrer, $allowed_domain) === false) {
+        //     return new WP_Error('forbidden', 'Requests from this domain are not allowed.', ['status' => 403]);
+        // }
 
         // If all checks pass, allow the request
         return true;
@@ -308,7 +314,7 @@ class VISON_Admin
 
         $post_id = wp_insert_post([
             'post_title' => sanitize_text_field($params['title']),
-            'post_content' => sanitize_textarea_field($params['content']),
+            'post_content' => wp_kses_post($params['content']),
             'post_status' => 'publish',
             'post_type' => 'post',
             'post_author' => $author_id,
@@ -355,7 +361,7 @@ class VISON_Admin
         $updated = wp_update_post([
             'ID' => $post_id,
             'post_title' => sanitize_text_field($params['title']),
-            'post_content' => sanitize_textarea_field($params['content']),
+            'post_content' => wp_kses_post($params['content']),
         ], true);
 
         if (is_wp_error($updated)) {
