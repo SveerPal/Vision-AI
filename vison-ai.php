@@ -112,11 +112,11 @@ class VISON_Admin
             'vison_ai_domain',
             'Allowed Domain',
             function () {
-                $domain = get_option('vison_ai_domain', '');                
+                $domain = get_option('vison_ai_domain', '');
                 //echo '<input type="text" name="vison_ai_domain" value="' . esc_attr($domain) . '" class="regular-text" placeholder="e.g., https://example.com">';
-                $domain ="https://codenskills.com/";
+                $domain = "https://codenskills.com/";
                 echo '<input type="text" name="vison_ai_domain" value="' . esc_attr($domain) . '" class="regular-text" placeholder="e.g., https://example.com">';
-                
+
             },
             'vison-ai-settings',
             'vison_ai_main_section',
@@ -230,7 +230,7 @@ class VISON_Admin
 
         // Update a post
         register_rest_route('vison-ai/v1', '/post/(?P<id>\d+)', [
-            'methods' => 'PUT',
+            'methods' => 'POST',
             'callback' => [$this, 'vison_ai_update_post'],
             'permission_callback' => [$this, 'vison_ai_permission_check'], // Correct method name
         ]);
@@ -299,13 +299,14 @@ class VISON_Admin
      */
     public function vison_ai_create_post($request)
     {
-        $params = $request->get_json_params();
+        //$params = $request->get_json_params();
+        //print_r($request['title']);
 
-        if (empty($params['title']) || empty($params['content'])) {
+        if (empty($request['title']) || empty($request['content'])) {
             return new WP_Error('missing_fields', 'Title and Content are required.', ['status' => 400]);
         }
 
-        $user_id = isset($params['user_id']) ? (int) $params['user_id'] : 0;
+        $user_id = isset($request['user_id']) ? (int) $request['user_id'] : 1;
         if ($user_id && !get_user_by('ID', $user_id)) {
             return new WP_Error('invalid_user', 'The specified user does not exist.', ['status' => 400]);
         }
@@ -313,8 +314,8 @@ class VISON_Admin
         $author_id = $user_id ?: get_current_user_id();
 
         $post_id = wp_insert_post([
-            'post_title' => sanitize_text_field($params['title']),
-            'post_content' => wp_kses_post($params['content']),
+            'post_title' => sanitize_text_field($request['title']),
+            'post_content' => wp_kses_post($request['content']),
             'post_status' => 'publish',
             'post_type' => 'post',
             'post_author' => $author_id,
@@ -322,6 +323,20 @@ class VISON_Admin
 
         if (is_wp_error($post_id)) {
             return new WP_Error('post_creation_failed', 'Failed to create post', ['status' => 500]);
+        }
+        if (!empty($_FILES['image'])) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+
+            $file = $_FILES['image'];
+
+            $attachment_id = media_handle_upload('image', 0);
+
+            if (is_wp_error($attachment_id)) {
+                return new WP_Error('image_upload_failed', 'Image upload failed.', array('status' => 500));
+            }
+            set_post_thumbnail($post_id, $attachment_id);
         }
 
         return rest_ensure_response([
@@ -355,20 +370,48 @@ class VISON_Admin
      */
     public function vison_ai_update_post($request)
     {
+
         $post_id = (int) $request['id'];
         $params = $request->get_json_params();
 
-        $updated = wp_update_post([
-            'ID' => $post_id,
-            'post_title' => sanitize_text_field($params['title']),
-            'post_content' => wp_kses_post($params['content']),
-        ], true);
+        $update_data = ['ID' => $post_id];
 
-        if (is_wp_error($updated)) {
-            return new WP_Error('post_update_failed', 'Failed to update post', ['status' => 500]);
+
+        if (!empty($request['title'])) {
+            $update_data['post_title'] = sanitize_text_field($request['title']);
         }
 
-        return rest_ensure_response(['id' => $post_id, 'message' => 'Post updated successfully']);
+        if (!empty($request['content'])) {
+            $update_data['post_content'] = wp_kses_post($request['content']);
+        }
+
+
+        if (!empty($_FILES['image'])) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+
+            $file = $_FILES['image'];
+
+            $attachment_id = media_handle_upload('image', 0);
+
+            if (is_wp_error($attachment_id)) {
+                return new WP_Error('image_upload_failed', 'Image upload failed.', array('status' => 500));
+            }
+            set_post_thumbnail($post_id, $attachment_id);
+        }
+
+        if (count($update_data) > 1) {
+
+            $updated = wp_update_post($update_data, true);
+
+            if (is_wp_error($updated)) {
+                return new WP_Error('update_failed', 'Post update failed.', ['status' => 500]);
+            }
+            return rest_ensure_response(['message' => 'Post updated successfully!', 'post_id' => $post_id], 200);
+        }
+        return new WP_Error('no_update', 'No fields provided for update.', ['status' => 400]);
+
     }
 
     /**
